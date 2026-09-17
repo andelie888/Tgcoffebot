@@ -1,5 +1,7 @@
 import os
+import json
 import sqlite3
+from datetime import time
 
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
@@ -11,11 +13,11 @@ from telegram.ext import (
     filters,
 )
 
-
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DB_NAME = "coffee_manager.db"
+
 
 def ai_analysis_menu():
     return ReplyKeyboardMarkup(
@@ -26,6 +28,7 @@ def ai_analysis_menu():
         resize_keyboard=True,
     )
 
+
 def main_menu():
     return ReplyKeyboardMarkup(
         [
@@ -33,9 +36,9 @@ def main_menu():
             ["💸 Расходы"],
             ["💳 История расходов"],
             ["📋 История", "🏆 Лучшие продажи"],
-            ["📈 Отчёт по товарам", "🧾 Отчёты"],         
+            ["📈 Отчёт по товарам", "🧾 Отчёты"],
             ["📦 Склад", "🛒 Закупки"],
-            ["📋 История закупок", "🧠 AI-анализ"], 
+            ["📋 История закупок", "🧠 AI-анализ"],
             ["⚙️ Настройки"],
         ],
         resize_keyboard=True,
@@ -46,50 +49,50 @@ def get_products():
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute(
-        "SELECT id, name, price, cost FROM products ORDER BY id"
-    )
+    cursor.execute("SELECT id, name, price, cost FROM products ORDER BY id")
 
     products = cursor.fetchall()
 
     connection.close()
 
     return products
+
+
 def get_ingredients():
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT id, name, unit, stock, minimum_stock
         FROM ingredients
         ORDER BY id
-        """
-    )
+        """)
 
     ingredients = cursor.fetchall()
 
     connection.close()
 
     return ingredients
+
+
 def get_low_stock():
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT name, unit, stock, minimum_stock
         FROM ingredients
         WHERE stock <= minimum_stock
         ORDER BY stock ASC
-        """
-    )
+        """)
 
     low_stock = cursor.fetchall()
 
     connection.close()
 
     return low_stock
+
+
 def deduct_inventory(cursor, product_id, quantity):
     cursor.execute(
         """
@@ -113,6 +116,8 @@ def deduct_inventory(cursor, product_id, quantity):
             """,
             (total_needed, ingredient_id),
         )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "☕ Добро пожаловать в Coffee Manager!\n\n"
@@ -121,13 +126,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=main_menu(),
     )
 
+
 async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ingredients = get_ingredients()
 
     if not ingredients:
-        await update.message.reply_text(
-            "📦 Склад пока пуст."
-        )
+        await update.message.reply_text("📦 Склад пока пуст.")
         return
 
     message = "📦 Текущий склад\n\n"
@@ -148,6 +152,8 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message,
         reply_markup=main_menu(),
     )
+
+
 async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
@@ -177,21 +183,20 @@ async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("expense_amount", None)
 
     await update.message.reply_text(
-        "✅ Расход сохранён.\n"
-        f"💸 Сумма: ${amount:.2f}",
+        "✅ Расход сохранён.\n" f"💸 Сумма: ${amount:.2f}",
         reply_markup=main_menu(),
     )
+
+
 async def expense_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT name, amount, expense_date
         FROM expenses
         ORDER BY id DESC
-        """
-    )
+        """)
 
     expenses = cursor.fetchall()
     connection.close()
@@ -207,21 +212,20 @@ async def expense_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for name, amount, expense_date in expenses:
         message += (
-            f"💸 {name}\n"
-            f"   Сумма: ${amount:.2f}\n"
-            f"   Дата: {expense_date}\n\n"
+            f"💸 {name}\n" f"   Сумма: ${amount:.2f}\n" f"   Дата: {expense_date}\n\n"
         )
 
     await update.message.reply_text(
         message,
         reply_markup=main_menu(),
     )
+
+
 async def purchase_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT
             ingredients.name,
             purchases.quantity,
@@ -232,8 +236,7 @@ async def purchase_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         JOIN ingredients
             ON purchases.ingredient_id = ingredients.id
         ORDER BY purchases.id DESC
-        """
-    )
+        """)
 
     purchases = cursor.fetchall()
     connection.close()
@@ -262,6 +265,7 @@ async def purchase_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message,
         reply_markup=main_menu(),
     )
+
 
 async def add_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     connection = sqlite3.connect(DB_NAME)
@@ -323,10 +327,10 @@ async def add_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("purchase_quantity", None)
 
     await update.message.reply_text(
-        "✅ Закупка сохранена.\n"
-        f"📦 Добавлено на склад: {quantity:g}",
+        "✅ Закупка сохранена.\n" f"📦 Добавлено на склад: {quantity:g}",
         reply_markup=main_menu(),
     )
+
 
 async def expense_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["waiting_for_expense_name"] = True
@@ -334,8 +338,13 @@ async def expense_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "💸 Добавление расхода\n\n"
         "Введите название расхода:\n"
-        "Например: аренда, зарплата, электричество"
+        "Например: аренда, зарплата, электричество",
+        reply_markup=ReplyKeyboardMarkup(
+            [["🔙 Главное меню"]],
+            resize_keyboard=True,
+        ),
     )
+
 
 async def purchase_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ingredients = get_ingredients()
@@ -361,13 +370,14 @@ async def purchase_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             resize_keyboard=True,
         ),
     )
+
+
 async def show_purchases(update: Update, context: ContextTypes.DEFAULT_TYPE):
     low_stock = get_low_stock()
 
     if not low_stock:
         await update.message.reply_text(
-            "🛒 Закупки\n\n"
-            "✅ Пока ничего докупать не нужно.",
+            "🛒 Закупки\n\n" "✅ Пока ничего докупать не нужно.",
             reply_markup=main_menu(),
         )
         return
@@ -388,13 +398,13 @@ async def show_purchases(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message,
         reply_markup=main_menu(),
     )
+
+
 async def show_sales(update: Update, context: ContextTypes.DEFAULT_TYPE):
     products = get_products()
 
     if not products:
-        await update.message.reply_text(
-            "📊 Пока в базе нет товаров."
-        )
+        await update.message.reply_text("📊 Пока в базе нет товаров.")
         return
 
     buttons = []
@@ -414,6 +424,7 @@ async def show_sales(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard,
     )
 
+
 async def save_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -423,15 +434,11 @@ async def save_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         quantity = int(text)
     except ValueError:
-        await update.message.reply_text(
-            "❗ Введите количество числом.\nНапример: 2"
-        )
+        await update.message.reply_text("❗ Введите количество числом.\nНапример: 2")
         return True
 
     if quantity <= 0:
-        await update.message.reply_text(
-            "❗ Количество должно быть больше нуля."
-        )
+        await update.message.reply_text("❗ Количество должно быть больше нуля.")
         return True
 
     product_id = context.user_data["selected_product_id"]
@@ -454,20 +461,19 @@ async def save_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     connection.close()
 
     await update.message.reply_text(
-        f"✅ Продажа записана!\n\n"
-        f"☕ {product_name}\n"
-        f"Количество: {quantity} шт."
+        f"✅ Продажа записана!\n\n" f"☕ {product_name}\n" f"Количество: {quantity} шт."
     )
 
     context.user_data.clear()
 
     return True
+
+
 async def sales_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT
             p.name,
             s.quantity,
@@ -478,8 +484,7 @@ async def sales_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         JOIN products p ON s.product_id = p.id
         ORDER BY s.id DESC
         LIMIT 10
-        """
-    )
+        """)
 
     sales = cursor.fetchall()
 
@@ -506,6 +511,8 @@ async def sales_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message,
         reply_markup=main_menu(),
     )
+
+
 async def finance_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         ["📅 Сегодня", "📅 Вчера"],
@@ -521,9 +528,43 @@ async def finance_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             resize_keyboard=True,
         ),
     )
+
+
+def get_today_finances():
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT
+            COALESCE(SUM(s.quantity * p.price), 0),
+            COALESCE(SUM(s.quantity * p.cost), 0),
+            COALESCE(SUM(s.quantity), 0)
+        FROM sales s
+        JOIN products p ON s.product_id = p.id
+        WHERE date(s.sale_date) = date('now')
+        """)
+
+    revenue, cost, quantity = cursor.fetchone()
+
+    cursor.execute("""
+        SELECT COALESCE(SUM(amount), 0)
+        FROM expenses
+        WHERE date(expense_date) = date('now')
+        """)
+
+    expenses = cursor.fetchone()[0]
+
+    connection.close()
+
+    gross_profit = revenue - cost
+    net_profit = gross_profit - expenses
+
+    return quantity, revenue, cost, gross_profit, expenses, net_profit
+
+
 async def show_finances(update: Update, context: ContextTypes.DEFAULT_TYPE):
     period = context.user_data.get("finance_period", "today")
-    
+
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
@@ -537,20 +578,20 @@ async def show_finances(update: Update, context: ContextTypes.DEFAULT_TYPE):
         JOIN products p ON s.product_id = p.id
         WHERE date(s.sale_date) >= CASE
             WHEN ? = 'yesterday'
-                THEN date('now', 'localtime', '-1 day')
+                THEN date('now', '-1 day')
             WHEN ? = '7days'
-                THEN date('now', 'localtime', '-6 days')
+                THEN date('now', '-6 days')
             WHEN ? = 'month'
-                THEN date('now', 'localtime', 'start of month')
+                THEN date('now', 'start of month')
             ELSE CASE
                 WHEN ? = 'all' THEN '1900-01-01'
-                ELSE date('now', 'localtime')
+                ELSE date('now')
             END 
         END
         AND date(s.sale_date) <= CASE
             WHEN ? = 'yesterday'
-                THEN date('now', 'localtime', '-1 day')
-            ELSE date('now', 'localtime')
+                THEN date('now', '-1 day')
+            ELSE date('now')
         END
         """,
         (period, period, period, period, period),
@@ -563,20 +604,20 @@ async def show_finances(update: Update, context: ContextTypes.DEFAULT_TYPE):
         FROM expenses
         WHERE date(expense_date) >= CASE
             WHEN ? = 'yesterday'
-                THEN date('now', 'localtime', '-1 day')
+                THEN date('now', '-1 day')
             WHEN ? = '7days'
-                THEN date('now', 'localtime', '-6 days')
+                THEN date('now', '-6 days')
             WHEN ? = 'month'
-                THEN date('now', 'localtime', 'start of month')
+                THEN date('now', 'start of month')
             ELSE CASE
                 WHEN ? = 'all' THEN '1900-01-01'
-                ELSE date('now', 'localtime')
+                ELSE date('now')
             END
         END
         AND date(expense_date) <= CASE
             WHEN ? = 'yesterday'
-                THEN date('now', 'localtime', '-1 day')
-            ELSE date('now', 'localtime')
+                THEN date('now', '-1 day')
+            ELSE date('now')
         END
         """,
         (period, period, period, period, period),
@@ -605,12 +646,13 @@ async def show_finances(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 Маржа: {margin:.1f}%",
         reply_markup=main_menu(),
     )
+
+
 async def best_selling_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT
             p.name,
             SUM(s.quantity) AS total_quantity,
@@ -619,8 +661,7 @@ async def best_selling_products(update: Update, context: ContextTypes.DEFAULT_TY
         JOIN products p ON s.product_id = p.id
         GROUP BY p.id
         ORDER BY total_quantity DESC
-        """
-    )
+        """)
 
     products = cursor.fetchall()
 
@@ -646,12 +687,13 @@ async def best_selling_products(update: Update, context: ContextTypes.DEFAULT_TY
         message,
         reply_markup=main_menu(),
     )
+
+
 async def product_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT
             p.name,
             COALESCE(SUM(s.quantity), 0),
@@ -661,8 +703,7 @@ async def product_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         LEFT JOIN sales s ON s.product_id = p.id
         GROUP BY p.id
         ORDER BY SUM(s.quantity) DESC
-        """
-    )
+        """)
 
     products = cursor.fetchall()
 
@@ -691,12 +732,13 @@ async def product_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message,
         reply_markup=main_menu(),
     )
+
+
 async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT
             COALESCE(SUM(s.quantity * p.price), 0),
             COALESCE(SUM(s.quantity * p.cost), 0),
@@ -704,8 +746,7 @@ async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         FROM sales s
         JOIN products p ON s.product_id = p.id
         WHERE date(s.sale_date) = date('now')
-        """
-    )
+        """)
 
     revenue, cost, quantity = cursor.fetchone()
 
@@ -720,6 +761,8 @@ async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📦 Себестоимость: ${cost:.2f}\n"
         f"💰 Валовая прибыль: ${profit:.2f}"
     )
+
+
 def get_ai_analysis_data():
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
@@ -757,6 +800,8 @@ def get_ai_analysis_data():
         expenses,
         net_profit,
     )
+
+
 def get_previous_period_data():
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
@@ -787,6 +832,8 @@ def get_previous_period_data():
     connection.close()
 
     return sales_quantity, revenue, expenses
+
+
 def format_change(current, previous):
     if previous == 0:
         return "— Нет данных за предыдущие 7 дней"
@@ -799,6 +846,8 @@ def format_change(current, previous):
         return f"📉 {change:.1f}%"
     else:
         return "➖ 0.0%"
+
+
 def get_product_profitability():
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
@@ -823,6 +872,8 @@ def get_product_profitability():
     connection.close()
 
     return products
+
+
 def get_profitability_summary():
     products = get_product_profitability()
 
@@ -833,6 +884,8 @@ def get_profitability_summary():
     best_margin = max(products, key=lambda item: item[4])
 
     return most_profitable, best_margin
+
+
 def get_product_sales_analysis():
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
@@ -855,12 +908,16 @@ def get_product_sales_analysis():
     connection.close()
 
     return products
+
+
 def get_unsold_products(product_sales_analysis):
     return [
         name
         for name, quantity, product_revenue in product_sales_analysis
         if quantity == 0
     ]
+
+
 def get_expense_analysis():
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
@@ -880,6 +937,8 @@ def get_expense_analysis():
     connection.close()
 
     return expenses
+
+
 def get_main_ai_conclusion(
     net_profit,
     gross_profit,
@@ -897,21 +956,6 @@ def get_main_ai_conclusion(
             "на результат за период."
         )
 
-    if sales_comparison.startswith("📉"):
-        return (
-            "Продажи снизились по сравнению с предыдущими 7 днями. "
-            "Стоит обратить внимание на количество продаж."
-        )
-
-    if net_profit < 0 and expense_analysis:
-        biggest_expense_name, biggest_expense_amount = expense_analysis[0]
-
-        return (
-            f"За последние 7 дней чистая прибыль отрицательная. "
-            f"Главный расход — {biggest_expense_name} "
-            f"(${biggest_expense_amount:.2f})."
-        )
-
     if net_profit < 0:
         return (
             "За последние 7 дней чистая прибыль отрицательная. "
@@ -923,18 +967,18 @@ def get_main_ai_conclusion(
 
         return (
             f"За последние 7 дней лидер продаж — {best_name}. "
-            f"Есть товары без продаж."
+            "Есть товары без продаж."
         )
 
     if net_profit > 0:
-        return (
-            "За последние 7 дней бизнес показывает положительную "
-            "чистую прибыль."
-        )
+        return "За последние 7 дней бизнес показывает положительную " "чистую прибыль."
 
     return "За последние 7 дней требуется дополнительный анализ данных."
+
+
 def get_ai_action(
     net_profit,
+    revenue,
     gross_profit,
     expenses,
     expense_analysis,
@@ -944,48 +988,126 @@ def get_ai_action(
     revenue_comparison,
     expenses_comparison,
 ):
-    if net_profit < 0 and expense_analysis:
+    if net_profit < 0 and expenses > gross_profit and expense_analysis:
         biggest_expense_name, biggest_expense_amount = expense_analysis[0]
 
         return (
-            f"Проверь расход «{biggest_expense_name}» "
-            f"на ${biggest_expense_amount:.2f}. "
-            f"При выручке ${gross_profit + expenses:.2f} "
-            "этот расход сильно влияет на итоговый результат."
+            f"🔴 Главная проблема: расходы составили ${expenses:.2f}, "
+            f"а валовая прибыль — ${gross_profit:.2f}.\n\n"
+            f"Основной расход — «{biggest_expense_name}» "
+            f"на ${biggest_expense_amount:.2f}.\n\n"
+            f"💡 Что сделать: проверь, является ли этот расход "
+            "разовым или регулярным."
         )
 
     if sales_comparison.startswith("📉"):
         return (
-            "Продажи снизились по сравнению с предыдущими 7 днями. "
-            "Стоит обратить внимание на количество продаж."
+            "📉 Продажи снизились по сравнению с предыдущими 7 днями.\n\n"
+            "💡 Что сделать: проверь количество продаж "
+            "и товары, которые продаются хуже обычного."
         )
 
     if expenses_comparison.startswith("📈"):
         return (
-            "Расходы выросли по сравнению с предыдущими 7 днями. "
-            "Стоит проверить основные расходы за период."
+            "📈 Расходы выросли по сравнению с предыдущими 7 днями.\n\n"
+            "💡 Что сделать: проверь основные статьи расходов "
+            "и найди причину роста."
         )
 
     if top_products:
         best_name = top_products[0][0]
 
         return (
-            f"Обрати внимание на «{best_name}» — "
-            "это лидер продаж за период."
+            f"🏆 Лидер продаж — «{best_name}».\n\n"
+            "💡 Что сделать: следи за его продажами "
+            "и используй его как один из основных товаров."
         )
 
     if unsold_products:
         return (
-            "Проверь товары без продаж и реши, "
-            "стоит ли оставлять их в текущем ассортименте."
+            "⚠️ Есть товары без продаж.\n\n"
+            "💡 Что сделать: проверь, почему они не продаются, "
+            "и реши, стоит ли оставлять их в ассортименте."
         )
 
     if net_profit > 0:
         return (
-            "Продолжай контролировать прибыль и основные расходы."
+            "🟢 Бизнес показывает положительную чистую прибыль.\n\n"
+            "💡 Что сделать: продолжай контролировать прибыль "
+            "и основные расходы."
         )
 
     return "Добавь больше данных о продажах для более точного анализа."
+
+
+def build_ai_context(
+    sales_quantity,
+    revenue,
+    product_cost,
+    gross_profit,
+    expenses,
+    net_profit,
+    sales_comparison,
+    revenue_comparison,
+    expenses_comparison,
+    top_products,
+    expense_analysis,
+    unsold_products,
+    profitability_summary,
+    low_stock,
+):
+    context = {
+        "period": "Последние 7 дней",
+        "sales_quantity": sales_quantity,
+        "revenue": revenue,
+        "product_cost": product_cost,
+        "gross_profit": gross_profit,
+        "expenses": expenses,
+        "net_profit": net_profit,
+        "sales_comparison": sales_comparison,
+        "revenue_comparison": revenue_comparison,
+        "expenses_comparison": expenses_comparison,
+        "top_products": top_products,
+        "expense_analysis": expense_analysis,
+        "unsold_products": unsold_products,
+        "profitability_summary": profitability_summary,
+        "low_stock": low_stock,
+    }
+
+    return context
+
+
+def format_ai_context(ai_context):
+    return json.dumps(
+        ai_context,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def get_ai_system_prompt():
+    return (
+        "Ты AI-аналитик кофейни Coffee Manager.\n"
+        "Анализируй только предоставленные данные.\n"
+        "Никогда не придумывай и не изменяй цифры.\n"
+        "Не повторяй одну и ту же информацию несколько раз.\n"
+        "Не давай длинных объяснений.\n\n"
+        "Формат ответа:\n"
+        "🎯 Главная проблема: одна конкретная проблема.\n"
+        "🔎 Причина: краткое объяснение на основе данных.\n"
+        "💡 Что сделать: одно конкретное действие.\n\n"
+        "Если серьёзной проблемы нет, укажи это кратко "
+        "и предложи одно полезное действие."
+    )
+
+
+def build_ai_request(ai_context):
+    return {
+        "system": get_ai_system_prompt(),
+        "data": format_ai_context(ai_context),
+    }
+
+
 async def ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = get_ai_analysis_data()
     previous_sales, previous_revenue, previous_expenses = get_previous_period_data()
@@ -1002,10 +1124,7 @@ async def ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
         net_profit,
     ) = data
 
-    top_products = [
-        item for item in product_sales_analysis
-        if item[1] > 0
-    ]
+    top_products = [item for item in product_sales_analysis if item[1] > 0]
 
     main_ai_conclusion = get_main_ai_conclusion(
         net_profit,
@@ -1015,12 +1134,47 @@ async def ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
         expense_analysis,
         unsold_products,
     )
+
     sales_comparison = format_change(sales_quantity, previous_sales)
     revenue_comparison = format_change(revenue, previous_revenue)
     expenses_comparison = format_change(expenses, previous_expenses)
+    profitability_summary = get_profitability_summary()
+
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT name, unit, stock, minimum_stock
+        FROM ingredients
+        WHERE stock <= minimum_stock
+        ORDER BY stock
+    """)
+
+    low_stock = cursor.fetchall()
+
+    connection.close()
+
+    ai_context = build_ai_context(
+        sales_quantity,
+        revenue,
+        product_cost,
+        gross_profit,
+        expenses,
+        net_profit,
+        sales_comparison,
+        revenue_comparison,
+        expenses_comparison,
+        top_products,
+        expense_analysis,
+        unsold_products,
+        profitability_summary,
+        low_stock,
+    )
+    ai_request = build_ai_request(ai_context)
 
     ai_action = get_ai_action(
         net_profit,
+        revenue,
         gross_profit,
         expenses,
         expense_analysis,
@@ -1031,9 +1185,7 @@ async def ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
         expenses_comparison,
     )
     message = (
-        "🧠 AI-анализ Coffee Manager\n\n"
-        "🎯 Что сделать сейчас:\n"
-        f"👉 {ai_action}"
+        "🧠 AI-анализ Coffee Manager\n\n" "🎯 Что сделать сейчас:\n" f"👉 {ai_action}"
     )
 
     await update.message.reply_text(
@@ -1112,12 +1264,11 @@ async def detailed_ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
             top_products, start=1
         ):
             message += (
-                f"{index}. {name} — "
-                f"{quantity:.0f} шт. / ${product_revenue:.2f}\n"
+                f"{index}. {name} — " f"{quantity:.0f} шт. / ${product_revenue:.2f}\n"
             )
     else:
         message += "Нет продаж за этот период.\n"
-    message += "\n💰 Прибыльность товаров:\n"
+    message += "\n💰 Прибыль с продажи:\n"
 
     if product_profitability:
         for name, price, cost, profit, margin in product_profitability:
@@ -1131,10 +1282,7 @@ async def detailed_ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
     message += "\n📊 Продажи по товарам:\n"
 
     for name, quantity, product_revenue in product_sales_analysis:
-        message += (
-            f"☕ {name}: {quantity:.0f} шт. "
-            f"/ ${product_revenue:.2f}\n"
-        )
+        message += f"☕ {name}: {quantity:.0f} шт. " f"/ ${product_revenue:.2f}\n"
     message += "\n⚠️ Товары без продаж:\n"
 
     if unsold_products:
@@ -1165,20 +1313,14 @@ async def detailed_ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
             f"{profitable_name} — ${profitable_profit:.2f}\n"
         )
 
-        message += (
-            f"📊 Самая высокая маржа: "
-            f"{margin_name} — {margin_value:.1f}%\n"
-        )
+        message += f"📊 Самая высокая маржа: " f"{margin_name} — {margin_value:.1f}%\n"
     else:
         message += "Нет данных для анализа.\n"
     message += "\n📦 Склад:\n"
 
     if low_stock:
         for name, unit, stock, minimum_stock in low_stock:
-            message += (
-                f"⚠️ {name}: {stock:g} {unit} "
-                f"(минимум {minimum_stock:g})\n"
-            )
+            message += f"⚠️ {name}: {stock:g} {unit} " f"(минимум {minimum_stock:g})\n"
     else:
         message += "✅ Критически низких запасов нет.\n"
     main_ai_conclusion = get_main_ai_conclusion(
@@ -1190,21 +1332,15 @@ async def detailed_ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
         unsold_products,
     )
 
-    message += (
-        "\n🧠 Главный вывод:\n"
-        f"💡 {main_ai_conclusion}\n"
-    )
+    message += "\n🧠 Главный вывод:\n" f"💡 {main_ai_conclusion}\n"
     message += "\n💡 Что требует внимания:\n"
 
     if net_profit < 0:
         message += (
-            "🔴 Чистая прибыль отрицательная. "
-            "Расходы превышают валовую прибыль.\n"
+            "🔴 Чистая прибыль отрицательная. " "Расходы превышают валовую прибыль.\n"
         )
     else:
-        message += (
-            "🟢 Чистая прибыль положительная.\n"
-        )
+        message += "🟢 Чистая прибыль положительная.\n"
 
     if expenses > gross_profit:
         message += (
@@ -1215,10 +1351,7 @@ async def detailed_ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if top_products:
         best_name, best_quantity, best_revenue = top_products[0]
-        message += (
-            f"🏆 Лидер продаж: {best_name} — "
-            f"{best_quantity:.0f} шт.\n"
-        )
+        message += f"🏆 Лидер продаж: {best_name} — " f"{best_quantity:.0f} шт.\n"
 
     if low_stock:
         message += (
@@ -1226,9 +1359,7 @@ async def detailed_ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
             "уровня — стоит проверить необходимость закупки.\n"
         )
     else:
-        message += (
-            "📦 Критически низких запасов не обнаружено.\n"
-        )
+        message += "📦 Критически низких запасов не обнаружено.\n"
     await update.message.reply_text(
         message,
         reply_markup=ai_analysis_menu(),
@@ -1243,6 +1374,8 @@ def settings_menu():
         ],
         resize_keyboard=True,
     )
+
+
 def notifications_menu():
     return ReplyKeyboardMarkup(
         [
@@ -1252,11 +1385,121 @@ def notifications_menu():
         ],
         resize_keyboard=True,
     )
+
+
 def notifications_status():
     return "🔔 Уведомления включены."
+
+
+def set_notifications(user_id, enabled):
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO settings (user_id, notifications_enabled)
+        VALUES (?, ?)
+        ON CONFLICT(user_id)
+        DO UPDATE SET notifications_enabled = excluded.notifications_enabled
+    """,
+        (user_id, int(enabled)),
+    )
+
+    connection.commit()
+    connection.close()
+
+
+def get_notifications_status(user_id):
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT notifications_enabled
+        FROM settings
+        WHERE user_id = ?
+        """,
+        (user_id,),
+    )
+
+    result = cursor.fetchone()
+
+    connection.close()
+
+    if result is None:
+        return False
+
+    return bool(result[0])
+    connection.commit()
+    connection.close()
+
+
+def get_low_stock_items():
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT name, stock, minimum_stock, unit
+        FROM ingredients
+        WHERE stock <= minimum_stock
+        ORDER BY stock ASC
+        """)
+
+    items = cursor.fetchall()
+
+    connection.close()
+
+    return items
+
+
+async def send_daily_notification(context):
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT user_id
+        FROM settings
+        WHERE notifications_enabled = 1
+        """)
+
+    users = cursor.fetchall()
+
+    connection.close()
+
+    for (user_id,) in users:
+        quantity, revenue, cost, gross_profit, expenses, net_profit = (
+            get_today_finances()
+        )
+        low_stock_items = get_low_stock_items()
+
+        low_stock_text = ""
+
+        if low_stock_items:
+            low_stock_text = "\n\n⚠️ Заканчивается:\n"
+
+            for name, stock, minimum_stock, unit in low_stock_items:
+                low_stock_text += (
+                    f"• {name}: {stock:g} {unit} "
+                    f"(минимум {minimum_stock:g} {unit})\n"
+                )
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                "📊 Ежедневная сводка Coffee Manager\n\n"
+                f"☕ Продано: {quantity} шт.\n"
+                f"💵 Выручка: ${revenue:.2f}\n"
+                f"📦 Себестоимость: ${cost:.2f}\n"
+                f"📈 Валовая прибыль: ${gross_profit:.2f}\n"
+                f"💸 Расходы: ${expenses:.2f}\n"
+                f"💰 Чистая прибыль: ${net_profit:.2f}"
+                f"{low_stock_text}"
+            ),
+        )
+
+
 async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    
+
     main_menu_buttons = {
         "📊 Продажи",
         "💰 Финансы",
@@ -1394,13 +1637,20 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == "🔔 Включить уведомления":
+        user_id = update.effective_user.id
+
+        set_notifications(user_id, True)
+
         await update.message.reply_text(
             notifications_status(),
             reply_markup=notifications_menu(),
         )
         return
-
     if text == "🔕 Выключить уведомления":
+        user_id = update.effective_user.id
+
+        set_notifications(user_id, False)
+
         await update.message.reply_text(
             "🔕 Уведомления выключены.",
             reply_markup=notifications_menu(),
@@ -1430,8 +1680,7 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("waiting_for_expense_name", None)
 
         await update.message.reply_text(
-            f"💸 Расход: {text}\n\n"
-            "Введите сумму расхода:"
+            f"💸 Расход: {text}\n\n" "Введите сумму расхода:"
         )
         return
 
@@ -1439,15 +1688,11 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             amount = float(text.replace(",", "."))
         except ValueError:
-            await update.message.reply_text(
-                "❌ Введите сумму числом, например: 50"
-            )
+            await update.message.reply_text("❌ Введите сумму числом, например: 50")
             return
 
         if amount <= 0:
-            await update.message.reply_text(
-                "❌ Сумма должна быть больше нуля."
-            )
+            await update.message.reply_text("❌ Сумма должна быть больше нуля.")
             return
 
         context.user_data["expense_amount"] = amount
@@ -1460,15 +1705,11 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             quantity = float(text.replace(",", "."))
         except ValueError:
-            await update.message.reply_text(
-                "❌ Введите количество числом, например: 2"
-            )
+            await update.message.reply_text("❌ Введите количество числом, например: 2")
             return
 
         if quantity <= 0:
-            await update.message.reply_text(
-                "❌ Количество должно быть больше нуля."
-            )
+            await update.message.reply_text("❌ Количество должно быть больше нуля.")
             return
 
         context.user_data["purchase_quantity"] = quantity
@@ -1492,8 +1733,7 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["purchase_unit"] = unit
 
             await update.message.reply_text(
-                f"🛒 Вы выбрали: {name}\n\n"
-                f"Введите количество в {unit}:"
+                f"🛒 Вы выбрали: {name}\n\n" f"Введите количество в {unit}:"
             )
             return
 
@@ -1507,22 +1747,25 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["selected_product_name"] = name
 
             await update.message.reply_text(
-                f"☕ Вы выбрали: {name}\n\n"
-                "Введите количество:"
+                f"☕ Вы выбрали: {name}\n\n" "Введите количество:"
             )
             return
 
     await update.message.reply_text(
-        f"Вы выбрали: {text}\n\n"
-        "Этот раздел скоро будет подключён.",
+        f"Вы выбрали: {text}\n\n" "Этот раздел скоро будет подключён.",
         reply_markup=main_menu(),
     )
+
+
 def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN не найден в файле .env")
 
     application = Application.builder().token(BOT_TOKEN).build()
-
+    application.job_queue.run_daily(
+        send_daily_notification,
+        time=time(hour=10, minute=0),
+    )
     application.add_handler(CommandHandler("start", start))
 
     application.add_handler(

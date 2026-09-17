@@ -1,6 +1,5 @@
 import sqlite3
 
-
 DB_NAME = "coffee_manager.db"
 
 
@@ -70,6 +69,12 @@ def create_tables():
             name TEXT NOT NULL,
             amount REAL NOT NULL,
             expense_date TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            user_id INTEGER PRIMARY KEY,
+            notifications_enabled INTEGER NOT NULL DEFAULT 0
         )
     """)
 
