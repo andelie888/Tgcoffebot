@@ -934,25 +934,26 @@ def get_main_ai_conclusion(
 
     return "За последние 7 дней требуется дополнительный анализ данных."
 def get_ai_action(
-        net_profit,
-        gross_profit,
-        expenses,
-        expense_analysis,
-        top_products,
-        unsold_products,
-        sales_comparison,
-        revenue_comparison,
-        expenses_comparison,
-    ):
+    net_profit,
+    gross_profit,
+    expenses,
+    expense_analysis,
+    top_products,
+    unsold_products,
+    sales_comparison,
+    revenue_comparison,
+    expenses_comparison,
+):
     if net_profit < 0 and expense_analysis:
         biggest_expense_name, biggest_expense_amount = expense_analysis[0]
 
-    return (
-        f"Проверь расход «{biggest_expense_name}» "
-        f"на ${biggest_expense_amount:.2f}. "
-        f"При выручке ${gross_profit + expenses:.2f} "
-        "этот расход сильно влияет на итоговый результат."
-    )
+        return (
+            f"Проверь расход «{biggest_expense_name}» "
+            f"на ${biggest_expense_amount:.2f}. "
+            f"При выручке ${gross_profit + expenses:.2f} "
+            "этот расход сильно влияет на итоговый результат."
+        )
+
     if sales_comparison.startswith("📉"):
         return (
             "Продажи снизились по сравнению с предыдущими 7 днями. "
@@ -1255,27 +1256,175 @@ def notifications_status():
     return "🔔 Уведомления включены."
 async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    
+    main_menu_buttons = {
+        "📊 Продажи",
+        "💰 Финансы",
+        "💸 Расходы",
+        "💳 История расходов",
+        "📋 История",
+        "🏆 Лучшие продажи",
+        "📈 Отчёт по товарам",
+        "🧾 Отчёты",
+        "📦 Склад",
+        "🛒 Закупки",
+        "📋 История закупок",
+        "🧠 AI-анализ",
+        "⚙️ Настройки",
+    }
 
+    if text in main_menu_buttons:
+        context.user_data.clear()
+    # ===== ФИНАНСЫ =====
     if text == "📅 Сегодня":
         context.user_data["finance_period"] = "today"
         await show_finances(update, context)
         return
+
     if text == "📅 Вчера":
         context.user_data["finance_period"] = "yesterday"
         await show_finances(update, context)
         return
+
     if text == "📅 7 дней":
         context.user_data["finance_period"] = "7days"
         await show_finances(update, context)
         return
+
     if text == "📅 Этот месяц":
         context.user_data["finance_period"] = "month"
         await show_finances(update, context)
         return
+
     if text == "📅 Всё время":
         context.user_data["finance_period"] = "all"
         await show_finances(update, context)
         return
+
+    if text == "🔙 Главное меню":
+        context.user_data.clear()
+
+        await update.message.reply_text(
+            "Главное меню:",
+            reply_markup=main_menu(),
+        )
+        return
+
+    # ===== ГЛАВНОЕ МЕНЮ =====
+
+    if text == "📊 Продажи":
+        context.user_data.clear()
+        await show_sales(update, context)
+        return
+
+    if text == "💰 Финансы":
+        context.user_data.clear()
+        await finance_menu(update, context)
+        return
+
+    if text == "💸 Расходы":
+        context.user_data.clear()
+        await expense_menu(update, context)
+        return
+
+    if text == "💳 История расходов":
+        context.user_data.clear()
+        await expense_history(update, context)
+        return
+
+    if text == "📋 История":
+        context.user_data.clear()
+        await sales_history(update, context)
+        return
+
+    if text == "🏆 Лучшие продажи":
+        context.user_data.clear()
+        await best_selling_products(update, context)
+        return
+
+    if text == "📈 Отчёт по товарам":
+        context.user_data.clear()
+        await product_report(update, context)
+        return
+
+    if text == "🧾 Отчёты":
+        context.user_data.clear()
+        await daily_report(update, context)
+        return
+
+    if text == "📦 Склад":
+        context.user_data.clear()
+        await show_inventory(update, context)
+        return
+
+    if text == "🛒 Закупки":
+        context.user_data.clear()
+        await purchase_menu(update, context)
+        return
+
+    if text == "📋 История закупок":
+        context.user_data.clear()
+        await purchase_history(update, context)
+        return
+
+    if text == "🧠 AI-анализ":
+        context.user_data.clear()
+        await ai_analysis(update, context)
+        return
+
+    if text == "📊 Детальный анализ":
+        context.user_data.clear()
+        await detailed_ai_analysis(update, context)
+        return
+
+    if text == "⚙️ Настройки":
+        context.user_data.clear()
+
+        await update.message.reply_text(
+            "⚙️ Настройки",
+            reply_markup=settings_menu(),
+        )
+        return
+
+    if text == "🔔 Уведомления":
+        await update.message.reply_text(
+            "🔔 Уведомления\n\nВыбери действие:",
+            reply_markup=notifications_menu(),
+        )
+        return
+
+    if text == "🔔 Включить уведомления":
+        await update.message.reply_text(
+            notifications_status(),
+            reply_markup=notifications_menu(),
+        )
+        return
+
+    if text == "🔕 Выключить уведомления":
+        await update.message.reply_text(
+            "🔕 Уведомления выключены.",
+            reply_markup=notifications_menu(),
+        )
+        return
+
+    if text == "⬅️ Назад в настройки":
+        await update.message.reply_text(
+            "⚙️ Настройки",
+            reply_markup=settings_menu(),
+        )
+        return
+
+    if text == "⬅️ Назад в меню":
+        context.user_data.clear()
+
+        await update.message.reply_text(
+            "Главное меню:",
+            reply_markup=main_menu(),
+        )
+        return
+
+    # ===== ВВОД РАСХОДА =====
+
     if context.user_data.get("waiting_for_expense_name"):
         context.user_data["expense_name"] = text
         context.user_data.pop("waiting_for_expense_name", None)
@@ -1285,6 +1434,7 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Введите сумму расхода:"
         )
         return
+
     if "expense_name" in context.user_data:
         try:
             amount = float(text.replace(",", "."))
@@ -1303,6 +1453,8 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["expense_amount"] = amount
         await add_expense(update, context)
         return
+
+    # ===== ВВОД ЗАКУПКИ =====
 
     if "purchase_ingredient_id" in context.user_data:
         try:
@@ -1323,73 +1475,14 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await add_purchase(update, context)
         return
 
+    # ===== ВВОД ПРОДАЖИ =====
+
     if "selected_product_id" in context.user_data:
         await save_sale(update, context)
         return
 
-    if text == "📊 Продажи":
-        await show_sales(update, context)
-        return
-    if text == "📋 История":
-        await sales_history(update, context)
-        return
-    if text == "💰 Финансы":
-        await finance_menu(update, context)
-        return
-    if text == "🏆 Лучшие продажи":
-        await best_selling_products(update, context)
-        return
-    if text == "📦 Склад":
-        await show_inventory(update, context)
-        return
-    if text == "🛒 Закупки":
-        await purchase_menu(update, context)
-        return
-    if text == "💸 Расходы":
-        await expense_menu(update, context)
-        return
-    if text == "💳 История расходов":
-        await expense_history(update, context)
-        return
-    if text == "📋 История закупок":
-        await purchase_history(update, context)
-        return
-    if text == "⚙️ Настройки":
-        await update.message.reply_text(
-            "⚙️ Настройки",
-            reply_markup=settings_menu(),
-        )
-        return
-    if text == "🔔 Уведомления":
-        await update.message.reply_text(
-            "🔔 Уведомления\n\nВыбери действие:",
-            reply_markup=notifications_menu(),
-        )
-        return
-    if text == "🔔 Включить уведомления":
-        await update.message.reply_text(
-            notifications_status(),
-            reply_markup=notifications_menu(),
-        )
-        return
-    if text == "🧠 AI-анализ":
-        await ai_analysis(update, context)
-        return
-    if text == "📊 Детальный анализ":
-        await detailed_ai_analysis(update, context)
-        return
-    if text == "⬅️ Назад в меню":
-        await update.message.reply_text(
-            "Главное меню:",
-            reply_markup=main_menu(),
-        )
-        return
-    if text == "🧾 Отчёты":
-        await daily_report(update, context)
-        return
-    if text == "📈 Отчёт по товарам":
-        await product_report(update, context)
-        return
+    # ===== ВЫБОР ИНГРЕДИЕНТА =====
+
     ingredients = get_ingredients()
 
     for ingredient_id, name, unit, stock, minimum_stock in ingredients:
@@ -1403,6 +1496,8 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Введите количество в {unit}:"
             )
             return
+
+    # ===== ВЫБОР ТОВАРА =====
 
     products = get_products()
 
@@ -1422,8 +1517,6 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Этот раздел скоро будет подключён.",
         reply_markup=main_menu(),
     )
-
-
 def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN не найден в файле .env")
