@@ -1,10 +1,10 @@
-import os
 import json
 import sqlite3
+
 from datetime import time
 
-from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -13,10 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-DB_NAME = "coffee_manager.db"
+from config import BOT_TOKEN, DB_NAME
 
 
 def ai_analysis_menu():
