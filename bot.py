@@ -7,13 +7,15 @@ from telegram import Update, ReplyKeyboardMarkup
 
 from telegram.ext import (
     Application,
+    ApplicationHandlerStop,
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
-from config import BOT_TOKEN, DB_NAME
+from config import ADMIN_IDS, BOT_TOKEN, DB_NAME
 
 
 def ai_analysis_menu():
@@ -113,6 +115,15 @@ def deduct_inventory(cursor, product_id, quantity):
             """,
             (total_needed, ingredient_id),
         )
+
+
+async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    if user is None or user.id not in ADMIN_IDS:
+        if update.message:
+            await update.message.reply_text("⛔ Нет доступа.")
+        raise ApplicationHandlerStop
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1464,6 +1475,9 @@ async def send_daily_notification(context):
     connection.close()
 
     for (user_id,) in users:
+        if user_id not in ADMIN_IDS:
+            continue
+
         quantity, revenue, cost, gross_profit, expenses, net_profit = (
             get_today_finances()
         )
@@ -1758,7 +1772,11 @@ def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN не найден в файле .env")
 
+    if not ADMIN_IDS:
+        raise ValueError("ADMIN_IDS не найден в файле .env")
+
     application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(TypeHandler(Update, check_access), group=-1)
     application.job_queue.run_daily(
         send_daily_notification,
         time=time(hour=10, minute=0),
