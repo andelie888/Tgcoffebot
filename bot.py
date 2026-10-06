@@ -1,4 +1,5 @@
 import json
+import math
 import sqlite3
 
 from datetime import time
@@ -16,6 +17,7 @@ from telegram.ext import (
 )
 
 from config import ADMIN_IDS, BOT_TOKEN, DB_NAME
+from database import create_tables, migrate_database
 
 
 def ai_analysis_menu():
@@ -48,7 +50,12 @@ def get_products():
     connection = sqlite3.connect(DB_NAME)
     cursor = connection.cursor()
 
-    cursor.execute("SELECT id, name, price, cost FROM products ORDER BY id")
+    cursor.execute("""
+        SELECT id, name, price, cost
+        FROM products
+        WHERE is_active = 1
+        ORDER BY id
+        """)
 
     products = cursor.fetchall()
 
@@ -127,6 +134,8 @@ async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+
     await update.message.reply_text(
         "☕ Добро пожаловать в Coffee Manager!\n\n"
         "Ваш помощник для управления кофейней.\n\n"
@@ -456,11 +465,29 @@ async def save_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor = connection.cursor()
 
     cursor.execute(
+        "SELECT price, cost FROM products WHERE id = ?",
+        (product_id,),
+    )
+
+    result = cursor.fetchone()
+
+    if result is None:
+        connection.close()
+        context.user_data.clear()
+        await update.message.reply_text(
+            "❌ Товар не найден.",
+            reply_markup=main_menu(),
+        )
+        return True
+
+    unit_price, unit_cost = result
+
+    cursor.execute(
         """
-        INSERT INTO sales (product_id, quantity, sale_date)
-        VALUES (?, ?, datetime('now'))
+        INSERT INTO sales (product_id, quantity, sale_date, unit_price, unit_cost)
+        VALUES (?, ?, datetime('now'), ?, ?)
         """,
-        (product_id, quantity),
+        (product_id, quantity, unit_price, unit_cost),
     )
 
     deduct_inventory(cursor, product_id, quantity)
@@ -485,8 +512,8 @@ async def sales_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SELECT
             p.name,
             s.quantity,
-            p.price,
-            s.quantity * p.price,
+            s.unit_price,
+            s.quantity * s.unit_price,
             s.sale_date
         FROM sales s
         JOIN products p ON s.product_id = p.id
@@ -544,8 +571,8 @@ def get_today_finances():
 
     cursor.execute("""
         SELECT
-            COALESCE(SUM(s.quantity * p.price), 0),
-            COALESCE(SUM(s.quantity * p.cost), 0),
+            COALESCE(SUM(s.quantity * s.unit_price), 0),
+            COALESCE(SUM(s.quantity * s.unit_cost), 0),
             COALESCE(SUM(s.quantity), 0)
         FROM sales s
         JOIN products p ON s.product_id = p.id
@@ -579,8 +606,8 @@ async def show_finances(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute(
         """
         SELECT
-            COALESCE(SUM(s.quantity * p.price), 0),
-            COALESCE(SUM(s.quantity * p.cost), 0),
+            COALESCE(SUM(s.quantity * s.unit_price), 0),
+            COALESCE(SUM(s.quantity * s.unit_cost), 0),
             COALESCE(SUM(s.quantity), 0)
         FROM sales s
         JOIN products p ON s.product_id = p.id
@@ -664,7 +691,7 @@ async def best_selling_products(update: Update, context: ContextTypes.DEFAULT_TY
         SELECT
             p.name,
             SUM(s.quantity) AS total_quantity,
-            SUM(s.quantity * p.price) AS revenue
+            SUM(s.quantity * s.unit_price) AS revenue
         FROM sales s
         JOIN products p ON s.product_id = p.id
         GROUP BY p.id
@@ -705,10 +732,11 @@ async def product_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SELECT
             p.name,
             COALESCE(SUM(s.quantity), 0),
-            COALESCE(SUM(s.quantity * p.price), 0),
-            COALESCE(SUM(s.quantity * p.cost), 0)
+            COALESCE(SUM(s.quantity * s.unit_price), 0),
+            COALESCE(SUM(s.quantity * s.unit_cost), 0)
         FROM products p
         LEFT JOIN sales s ON s.product_id = p.id
+        WHERE p.is_active = 1 OR s.id IS NOT NULL
         GROUP BY p.id
         ORDER BY SUM(s.quantity) DESC
         """)
@@ -748,8 +776,8 @@ async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cursor.execute("""
         SELECT
-            COALESCE(SUM(s.quantity * p.price), 0),
-            COALESCE(SUM(s.quantity * p.cost), 0),
+            COALESCE(SUM(s.quantity * s.unit_price), 0),
+            COALESCE(SUM(s.quantity * s.unit_cost), 0),
             COALESCE(SUM(s.quantity), 0)
         FROM sales s
         JOIN products p ON s.product_id = p.id
@@ -778,8 +806,8 @@ def get_ai_analysis_data():
     cursor.execute("""
         SELECT
             COALESCE(SUM(s.quantity), 0),
-            COALESCE(SUM(s.quantity * p.price), 0),
-            COALESCE(SUM(s.quantity * p.cost), 0)
+            COALESCE(SUM(s.quantity * s.unit_price), 0),
+            COALESCE(SUM(s.quantity * s.unit_cost), 0)
         FROM sales s
         JOIN products p ON s.product_id = p.id
         WHERE date(s.sale_date) >= date('now', '-6 days')
@@ -817,7 +845,7 @@ def get_previous_period_data():
     cursor.execute("""
         SELECT
             COALESCE(SUM(s.quantity), 0),
-            COALESCE(SUM(s.quantity * p.price), 0)
+            COALESCE(SUM(s.quantity * s.unit_price), 0)
         FROM sales s
         JOIN products p ON s.product_id = p.id
         WHERE date(s.sale_date)
@@ -872,6 +900,7 @@ def get_product_profitability():
                 ELSE 0
             END
         FROM products
+        WHERE is_active = 1
         ORDER BY (price - cost) DESC
     """)
 
@@ -902,11 +931,12 @@ def get_product_sales_analysis():
         SELECT
             p.name,
             COALESCE(SUM(s.quantity), 0),
-            COALESCE(SUM(s.quantity * p.price), 0)
+            COALESCE(SUM(s.quantity * s.unit_price), 0)
         FROM products p
         LEFT JOIN sales s
             ON s.product_id = p.id
             AND date(s.sale_date) >= date('now', '-6 days')
+        WHERE p.is_active = 1 OR s.id IS NOT NULL
         GROUP BY p.id, p.name
         ORDER BY SUM(s.quantity) DESC
     """)
@@ -1226,7 +1256,7 @@ async def detailed_ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
         SELECT
             p.name,
             SUM(s.quantity),
-            SUM(s.quantity * p.price)
+            SUM(s.quantity * s.unit_price)
         FROM sales s
         JOIN products p ON s.product_id = p.id
         WHERE date(s.sale_date) >= date('now', '-6 days')
@@ -1377,11 +1407,400 @@ async def detailed_ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYP
 def settings_menu():
     return ReplyKeyboardMarkup(
         [
+            ["☕ Управление меню"],
             ["🔔 Уведомления"],
             ["⬅️ Назад в меню"],
         ],
         resize_keyboard=True,
     )
+
+
+# ===== УПРАВЛЕНИЕ МЕНЮ =====
+
+PRODUCT_NAME_MAX_LENGTH = 40
+
+
+def cancel_menu():
+    return ReplyKeyboardMarkup(
+        [["❌ Отмена"]],
+        resize_keyboard=True,
+    )
+
+
+def menu_management_menu(products):
+    buttons = [["➕ Добавить товар"]]
+
+    for product_id, name, price, cost in products:
+        buttons.append([f"✏️ {name}"])
+
+    buttons.append(["⬅️ Назад в настройки"])
+
+    return ReplyKeyboardMarkup(
+        buttons,
+        resize_keyboard=True,
+    )
+
+
+def product_card_menu():
+    return ReplyKeyboardMarkup(
+        [
+            ["📝 Название", "💲 Цена"],
+            ["🧮 Себестоимость"],
+            ["🗑 Удалить"],
+            ["⬅️ К списку товаров"],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def confirm_delete_menu():
+    return ReplyKeyboardMarkup(
+        [["✅ Да, удалить", "❌ Отмена"]],
+        resize_keyboard=True,
+    )
+
+
+def get_product(product_id):
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, name, price, cost
+        FROM products
+        WHERE id = ? AND is_active = 1
+        """,
+        (product_id,),
+    )
+
+    product = cursor.fetchone()
+
+    connection.close()
+
+    return product
+
+
+def get_product_stats(product_id):
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT COALESCE(SUM(quantity), 0) FROM sales WHERE product_id = ?",
+        (product_id,),
+    )
+
+    sold_quantity = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM recipes WHERE product_id = ?",
+        (product_id,),
+    )
+
+    has_recipe = cursor.fetchone()[0] > 0
+
+    connection.close()
+
+    return sold_quantity, has_recipe
+
+
+def add_product(name, price, cost):
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "INSERT INTO products (name, price, cost) VALUES (?, ?, ?)",
+        (name, price, cost),
+    )
+
+    connection.commit()
+    connection.close()
+
+
+def update_product(product_id, name, price, cost):
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        UPDATE products
+        SET name = ?, price = ?, cost = ?
+        WHERE id = ?
+        """,
+        (name, price, cost, product_id),
+    )
+
+    connection.commit()
+    connection.close()
+
+
+def delete_product(product_id):
+    """Удаляет товар без продаж. Проданный товар только скрывает из меню."""
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM sales WHERE product_id = ?",
+        (product_id,),
+    )
+
+    has_sales = cursor.fetchone()[0] > 0
+
+    if has_sales:
+        cursor.execute(
+            "UPDATE products SET is_active = 0 WHERE id = ?",
+            (product_id,),
+        )
+    else:
+        cursor.execute(
+            "DELETE FROM recipes WHERE product_id = ?",
+            (product_id,),
+        )
+        cursor.execute(
+            "DELETE FROM products WHERE id = ?",
+            (product_id,),
+        )
+
+    connection.commit()
+    connection.close()
+
+    return "archived" if has_sales else "deleted"
+
+
+def validate_product_name(name, exclude_product_id=None):
+    if not name:
+        return "❌ Название не может быть пустым."
+
+    if "\n" in name:
+        return "❌ Название должно быть в одну строку."
+
+    if len(name) > PRODUCT_NAME_MAX_LENGTH:
+        return (
+            "❌ Название слишком длинное. "
+            f"Максимум {PRODUCT_NAME_MAX_LENGTH} символов."
+        )
+
+    for product_id, product_name, price, cost in get_products():
+        if product_id != exclude_product_id and (
+            product_name.casefold() == name.casefold()
+        ):
+            return "❌ Товар с таким названием уже есть в меню."
+
+    return None
+
+
+def parse_money(text):
+    try:
+        value = float(text.replace(",", "."))
+    except ValueError:
+        return None
+
+    if not math.isfinite(value):
+        return None
+
+    return round(value, 2)
+
+
+async def show_menu_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    products = get_products()
+
+    message = "☕ Управление меню\n\n"
+
+    if products:
+        for product_id, name, price, cost in products:
+            message += (
+                f"☕ {name}\n"
+                f"   Цена: ${price:.2f}\n"
+                f"   Себестоимость: ${cost:.2f}\n\n"
+            )
+        message += "Выберите товар или добавьте новый:"
+    else:
+        message += "В меню пока нет товаров.\nДобавьте первый товар:"
+
+    await update.message.reply_text(
+        message,
+        reply_markup=menu_management_menu(products),
+    )
+
+
+async def show_product_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    product = get_product(context.user_data.get("product_id"))
+
+    if product is None:
+        context.user_data.clear()
+        await show_menu_management(update, context)
+        return
+
+    product_id, name, price, cost = product
+    sold_quantity, has_recipe = get_product_stats(product_id)
+
+    profit = price - cost
+    margin = (profit / price) * 100 if price > 0 else 0
+
+    if has_recipe:
+        recipe_status = "✅ Рецепт задан — склад списывается."
+    else:
+        recipe_status = "⚠️ Рецепт не задан — склад не списывается."
+
+    await update.message.reply_text(
+        f"☕ {name}\n\n"
+        f"💵 Цена: ${price:.2f}\n"
+        f"📦 Себестоимость: ${cost:.2f}\n"
+        f"💰 Прибыль с продажи: ${profit:.2f} ({margin:.1f}% маржа)\n"
+        f"📊 Продано всего: {sold_quantity} шт.\n\n"
+        f"{recipe_status}",
+        reply_markup=product_card_menu(),
+    )
+
+
+async def handle_product_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    step = context.user_data["product_step"]
+    text = update.message.text.strip()
+
+    if step == "add_name":
+        error = validate_product_name(text)
+
+        if error:
+            await update.message.reply_text(error, reply_markup=cancel_menu())
+            return
+
+        context.user_data["new_product_name"] = text
+        context.user_data["product_step"] = "add_price"
+
+        await update.message.reply_text(
+            f"☕ {text}\n\nВведите цену продажи, например: 4.50",
+            reply_markup=cancel_menu(),
+        )
+        return
+
+    if step == "confirm_delete":
+        await update.message.reply_text(
+            "Нажмите «✅ Да, удалить» или «❌ Отмена».",
+            reply_markup=confirm_delete_menu(),
+        )
+        return
+
+    if step == "edit_name":
+        product = get_product(context.user_data.get("product_id"))
+
+        if product is None:
+            context.user_data.clear()
+            await show_menu_management(update, context)
+            return
+
+        product_id, name, price, cost = product
+        error = validate_product_name(text, exclude_product_id=product_id)
+
+        if error:
+            await update.message.reply_text(error, reply_markup=cancel_menu())
+            return
+
+        update_product(product_id, text, price, cost)
+        context.user_data.pop("product_step", None)
+
+        await update.message.reply_text("✅ Название изменено.")
+        await show_product_card(update, context)
+        return
+
+    # Остальные шаги — ввод цены или себестоимости.
+    value = parse_money(text)
+
+    if value is None:
+        await update.message.reply_text(
+            "❌ Введите число, например: 4.50",
+            reply_markup=cancel_menu(),
+        )
+        return
+
+    if step in ("add_price", "edit_price") and value <= 0:
+        await update.message.reply_text(
+            "❌ Цена должна быть больше нуля.",
+            reply_markup=cancel_menu(),
+        )
+        return
+
+    if step in ("add_cost", "edit_cost") and value < 0:
+        await update.message.reply_text(
+            "❌ Себестоимость не может быть отрицательной.",
+            reply_markup=cancel_menu(),
+        )
+        return
+
+    if step == "add_price":
+        context.user_data["new_product_price"] = value
+        context.user_data["product_step"] = "add_cost"
+
+        await update.message.reply_text(
+            "📦 Введите себестоимость одной порции, например: 1.20\n"
+            "Если не знаете — введите 0.",
+            reply_markup=cancel_menu(),
+        )
+        return
+
+    if step == "add_cost":
+        name = context.user_data["new_product_name"]
+        price = context.user_data["new_product_price"]
+
+        add_product(name, price, value)
+        context.user_data.clear()
+
+        await update.message.reply_text(
+            f"✅ Товар «{name}» добавлен.\n\n"
+            "⚠️ Рецепт для него не задан — склад при продаже "
+            "не списывается."
+        )
+        await show_menu_management(update, context)
+        return
+
+    product = get_product(context.user_data.get("product_id"))
+
+    if product is None:
+        context.user_data.clear()
+        await show_menu_management(update, context)
+        return
+
+    product_id, name, price, cost = product
+
+    if step == "edit_price":
+        update_product(product_id, name, value, cost)
+        await update.message.reply_text("✅ Цена изменена.")
+    else:
+        update_product(product_id, name, price, value)
+        await update.message.reply_text("✅ Себестоимость изменена.")
+
+    context.user_data.pop("product_step", None)
+    await show_product_card(update, context)
+
+
+async def start_product_edit(update: Update, context: ContextTypes.DEFAULT_TYPE, step):
+    product = get_product(context.user_data.get("product_id"))
+
+    if product is None:
+        context.user_data.clear()
+        await show_menu_management(update, context)
+        return
+
+    product_id, name, price, cost = product
+    context.user_data["product_step"] = step
+
+    if step == "edit_name":
+        prompt = f"Текущее название: {name}\n\nВведите новое название:"
+    elif step == "edit_price":
+        prompt = f"Текущая цена: ${price:.2f}\n\nВведите новую цену:"
+    elif step == "edit_cost":
+        prompt = (
+            f"Текущая себестоимость: ${cost:.2f}\n\n"
+            "Введите новую себестоимость:"
+        )
+    else:
+        await update.message.reply_text(
+            f"🗑 Удалить «{name}»?\n\n"
+            "Если товар уже продавался, он будет скрыт из меню, "
+            "а история продаж и отчёты сохранятся.",
+            reply_markup=confirm_delete_menu(),
+        )
+        return
+
+    await update.message.reply_text(prompt, reply_markup=cancel_menu())
 
 
 def notifications_menu():
@@ -1669,6 +2088,8 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == "⬅️ Назад в настройки":
+        context.user_data.clear()
+
         await update.message.reply_text(
             "⚙️ Настройки",
             reply_markup=settings_menu(),
@@ -1682,6 +2103,70 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Главное меню:",
             reply_markup=main_menu(),
         )
+        return
+
+    # ===== УПРАВЛЕНИЕ МЕНЮ =====
+
+    if text in ("☕ Управление меню", "⬅️ К списку товаров"):
+        context.user_data.clear()
+        await show_menu_management(update, context)
+        return
+
+    if text == "➕ Добавить товар":
+        context.user_data.clear()
+        context.user_data["product_step"] = "add_name"
+
+        await update.message.reply_text(
+            "➕ Новый товар\n\nВведите название, например: Раф",
+            reply_markup=cancel_menu(),
+        )
+        return
+
+    if text == "❌ Отмена":
+        if "product_id" in context.user_data:
+            context.user_data.pop("product_step", None)
+            await show_product_card(update, context)
+        else:
+            context.user_data.clear()
+            await show_menu_management(update, context)
+        return
+
+    product_edit_steps = {
+        "📝 Название": "edit_name",
+        "💲 Цена": "edit_price",
+        "🧮 Себестоимость": "edit_cost",
+        "🗑 Удалить": "confirm_delete",
+    }
+
+    if text in product_edit_steps and "product_id" in context.user_data:
+        await start_product_edit(update, context, product_edit_steps[text])
+        return
+
+    if (
+        text == "✅ Да, удалить"
+        and context.user_data.get("product_step") == "confirm_delete"
+    ):
+        product = get_product(context.user_data.get("product_id"))
+        context.user_data.clear()
+
+        if product is not None:
+            result = delete_product(product[0])
+
+            if result == "archived":
+                await update.message.reply_text(
+                    f"🗑 «{product[1]}» скрыт из меню.\n"
+                    "История продаж и отчёты сохранены."
+                )
+            else:
+                await update.message.reply_text(f"🗑 «{product[1]}» удалён.")
+
+        await show_menu_management(update, context)
+        return
+
+    # ===== ВВОД ТОВАРА =====
+
+    if "product_step" in context.user_data:
+        await handle_product_input(update, context)
         return
 
     # ===== ВВОД РАСХОДА =====
@@ -1733,6 +2218,15 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await save_sale(update, context)
         return
 
+    # ===== ВЫБОР ТОВАРА ДЛЯ РЕДАКТИРОВАНИЯ =====
+
+    for product_id, name, price, cost in get_products():
+        if text == f"✏️ {name}":
+            context.user_data.clear()
+            context.user_data["product_id"] = product_id
+            await show_product_card(update, context)
+            return
+
     # ===== ВЫБОР ИНГРЕДИЕНТА =====
 
     ingredients = get_ingredients()
@@ -1774,6 +2268,9 @@ def main():
 
     if not ADMIN_IDS:
         raise ValueError("ADMIN_IDS не найден в файле .env")
+
+    create_tables()
+    migrate_database()
 
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(TypeHandler(Update, check_access), group=-1)

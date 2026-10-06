@@ -16,7 +16,8 @@ def create_tables():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             price REAL NOT NULL,
-            cost REAL NOT NULL
+            cost REAL NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1
         )
     """)
 
@@ -48,6 +49,8 @@ def create_tables():
             product_id INTEGER NOT NULL,
             quantity INTEGER NOT NULL,
             sale_date TEXT NOT NULL,
+            unit_price REAL,
+            unit_cost REAL,
             FOREIGN KEY (product_id) REFERENCES products(id)
         )
     """)
@@ -82,6 +85,52 @@ def create_tables():
     connection.close()
 
 
+def get_columns(cursor, table):
+    cursor.execute(f"PRAGMA table_info({table})")
+
+    return {row[1] for row in cursor.fetchall()}
+
+
+def migrate_database():
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    if "is_active" not in get_columns(cursor, "products"):
+        cursor.execute("""
+            ALTER TABLE products
+            ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1
+        """)
+
+    sales_columns = get_columns(cursor, "sales")
+
+    if "unit_price" not in sales_columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN unit_price REAL")
+
+    if "unit_cost" not in sales_columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN unit_cost REAL")
+
+    # Старые продажи получают цену и себестоимость товара на момент миграции.
+    cursor.execute("""
+        UPDATE sales
+        SET unit_price = (
+            SELECT price FROM products WHERE products.id = sales.product_id
+        )
+        WHERE unit_price IS NULL
+    """)
+
+    cursor.execute("""
+        UPDATE sales
+        SET unit_cost = (
+            SELECT cost FROM products WHERE products.id = sales.product_id
+        )
+        WHERE unit_cost IS NULL
+    """)
+
+    connection.commit()
+    connection.close()
+
+
 if __name__ == "__main__":
     create_tables()
+    migrate_database()
     print("База данных создана.")
