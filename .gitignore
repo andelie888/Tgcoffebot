@@ -1,6 +1,13 @@
+# Секреты: токен бота и ID — никогда не в Git
 .env
+
+# Данные кофейни: база, бэкапы, файл с данными клиента
+*.db
+backups/
+shop_data.json
+
+# Окружение и мусор
 .venv/
-__pycache__/.env
 __pycache__/
-coffee_manager.db
-bot_backup.py
+*.pyc
+.DS_Store

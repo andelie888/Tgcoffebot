@@ -1,6 +1,6 @@
 import sqlite3
 
-DB_NAME = "coffee_manager.db"
+from config import DB_NAME
 
 
 def get_connection():
@@ -74,10 +74,23 @@ def create_tables():
             expense_date TEXT NOT NULL
         )
     """)
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             user_id INTEGER PRIMARY KEY,
-            notifications_enabled INTEGER NOT NULL DEFAULT 0
+            notifications_enabled INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+
+    # Журнал инвентаризаций: было → стало, чтобы видеть расхождения.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_adjustments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ingredient_id INTEGER NOT NULL,
+            old_stock REAL NOT NULL,
+            new_stock REAL NOT NULL,
+            adjusted_at TEXT NOT NULL,
+            FOREIGN KEY (ingredient_id) REFERENCES ingredients(id)
         )
     """)
 
