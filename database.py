@@ -43,6 +43,7 @@ def create_tables():
         )
     """)
 
+    # kind: sale — продажа, treat — угощение (себе, гостям), waste — брак.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sales (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +52,7 @@ def create_tables():
             sale_date TEXT NOT NULL,
             unit_price REAL,
             unit_cost REAL,
+            kind TEXT NOT NULL DEFAULT 'sale',
             FOREIGN KEY (product_id) REFERENCES products(id)
         )
     """)
@@ -94,6 +96,31 @@ def create_tables():
         )
     """)
 
+    # Закрытые дни: какие дни владелец уже подвёл.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS day_closures (
+            day TEXT PRIMARY KEY,
+            closed_at TEXT NOT NULL
+        )
+    """)
+
+    # Постоянные расходы в месяц: аренда, зарплаты, коммуналка.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS fixed_costs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            monthly_amount REAL NOT NULL
+        )
+    """)
+
+    # Настройки кофейни: налоговый режим и т.п.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS shop_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
+
     connection.commit()
     connection.close()
 
@@ -121,6 +148,9 @@ def migrate_database():
 
     if "unit_cost" not in sales_columns:
         cursor.execute("ALTER TABLE sales ADD COLUMN unit_cost REAL")
+
+    if "kind" not in sales_columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN kind TEXT NOT NULL DEFAULT 'sale'")
 
     # Старые продажи получают цену и себестоимость товара на момент миграции.
     cursor.execute("""

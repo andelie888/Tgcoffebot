@@ -64,8 +64,9 @@ def validate(data):
             errors.append(f"Товар повторяется: {name}")
         product_names.add(name.casefold())
 
-        if "·" in name:
-            errors.append(f"В названии нельзя использовать «·»: {name}")
+        words = name.split()
+        if len(words) > 1 and words[-1].isdigit():
+            errors.append(f"Название не должно кончаться целым числом (не отличить от количества): {name}")
 
         if not product.get("price") or product["price"] <= 0:
             errors.append(f"Нет цены у товара: {name}")
@@ -145,6 +146,25 @@ def fill(data):
 
         margin = (product["price"] - cost) / product["price"] * 100
         report.append((product["name"], product["price"], cost, margin, bool(recipe)))
+
+    # Постоянные расходы в месяц и налог — по желанию.
+    for name, amount in data.get("fixed_costs", {}).items():
+        cursor.execute(
+            "INSERT INTO fixed_costs (name, monthly_amount) VALUES (?, ?)",
+            (name, amount),
+        )
+
+    if data.get("tax_mode"):
+        cursor.execute(
+            "INSERT OR REPLACE INTO shop_settings (key, value) VALUES ('tax_mode', ?)",
+            (data["tax_mode"],),
+        )
+
+    if data.get("patent_cost_year"):
+        cursor.execute(
+            "INSERT OR REPLACE INTO shop_settings (key, value) VALUES ('patent_cost_year', ?)",
+            (str(data["patent_cost_year"]),),
+        )
 
     connection.commit()
     connection.close()
