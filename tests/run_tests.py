@@ -67,6 +67,9 @@ class FakeBot:
     async def send_message(self, chat_id, text, reply_markup=None):
         self.sent.append(text)
 
+    async def send_document(self, chat_id, document, filename, caption=None, disable_notification=False):
+        self.sent.append(("document", chat_id, filename, len(document.read())))
+
 
 class FakeJobs:
     def __init__(self):
@@ -84,6 +87,7 @@ class Context:
 
 
 CTX = Context()
+bot.BACKUP_DIR = TMP / "backups"  # тесты не трогают настоящие бэкапы
 NOW = [datetime(2026, 10, 7, 21, 0, tzinfo=ZoneInfo("Europe/Samara"))]
 bot.now_local = lambda: NOW[0]
 
@@ -365,6 +369,59 @@ check(bot.validate_product_name("Флэт уайт 0.3") is None, "«Флэт у
 check(bot.validate_product_name("латте 0.4") is not None, "дубликат без учёта регистра запрещён")
 out = say("что-то непонятное")
 check("Не понял" in last_text(out), "непонятный текст → подсказка")
+
+# ----- рецепты и ингредиенты в боте -----
+
+print("\n12а. Новый ингредиент и рецепт прямо в боте")
+check(acc.parse_amount("18 г", "кг") == 0.018 and acc.parse_amount("200 мл", "л") == 0.2, "«18 г» и «200 мл» переводятся")
+check(acc.parse_amount("1", "шт") == 1 and acc.parse_amount("5 кг", "л") is None, "неверная единица не принимается")
+
+NOW[0] = datetime(2026, 10, 12, 15, 0, tzinfo=ZoneInfo("Europe/Samara"))
+say(bot.BTN_REPORTS)
+say(bot.BTN_STOCK)
+say(bot.BTN_NEW_INGREDIENT)
+say("Сироп карамель")
+say("л")
+say("700")
+say("1.5")
+out = say("0.3")
+check("Сироп карамель" in all_text(out), "ингредиент добавлен и виден на складе")
+
+say(bot.BTN_SETTINGS)
+say(bot.BTN_MENU_MANAGEMENT)
+say(bot.BTN_ADD_PRODUCT)
+say("Карамельный латте 0.4")
+say("330")
+say("0")
+say("✏️ Карамельный латте 0.4")
+out = say(bot.BTN_RECIPE)
+check("Рецепта пока нет" in last_text(out), "у нового товара нет рецепта")
+for ing, amount in [("Кофе в зёрнах", "18 г"), ("Молоко", "280 мл"), ("Сироп карамель", "30 мл"), ("Стакан 0.4", "1"), ("Крышка", "1")]:
+    say(bot.BTN_RECIPE_ADD)
+    say(f"🥄 {ing}")
+    out = say(amount)
+check("Себестоимость порции" in last_text(out), "рецепт собран")
+costs = {name: cost for _, name, _, cost, _ in acc.get_product_costs()}
+milk_price = db("SELECT purchase_price FROM ingredients WHERE name='Молоко'")[0][0]
+expected = 0.018 * 1800 + 0.28 * milk_price + 0.03 * 700 + 7 + 3
+check(abs(costs["Карамельный латте 0.4"] - expected) < 0.01, f"себестоимость по рецепту {costs['Карамельный латте 0.4']}")
+say(bot.BTN_RECIPE_ADD)
+say("🥄 Молоко")
+say("0.3")
+check(len(acc.get_recipe(pid_new := [p for p, n, *_ in acc.get_products() if n == "Карамельный латте 0.4"][0])) == 5, "повторный ингредиент заменяет количество, а не дублирует")
+syrup_before = stock("Сироп карамель")
+say(bot.BTN_MAIN)
+say("✅ Закрыть день")
+say("Карамельный латте 0.4 - 10")
+say(bot.BTN_CONFIRM_SALES)
+say(bot.BTN_NO_FREE)
+check(abs(stock("Сироп карамель") - (syrup_before - 0.3)) < 1e-9, "новый сироп списывается при закрытии дня")
+
+print("\n12б. Ночной бэкап приходит в Telegram")
+bot.BACKUP_CHAT_ID = 111
+CTX.bot.sent.clear()
+asyncio.run(bot.backup_job(CTX))
+check(CTX.bot.sent and CTX.bot.sent[0][0] == "document" and CTX.bot.sent[0][3] > 0, "файл базы отправлен")
 
 # ----- миграция настоящей базы -----
 

@@ -17,6 +17,10 @@ DB_NAME = str(BASE_DIR / os.getenv("DB_FILE", "coffee_manager.db"))
 BACKUP_DIR = BASE_DIR / "backups"
 BACKUP_KEEP_DAYS = 14
 
+# Кому каждую ночь присылать файл базы (Telegram ID). Пусто — не присылать.
+_backup_chat = os.getenv("BACKUP_CHAT_ID", "").strip()
+BACKUP_CHAT_ID = int(_backup_chat) if _backup_chat.lstrip("-").isdigit() else None
+
 CURRENCY = os.getenv("CURRENCY", "₽").strip()
 TIMEZONE = ZoneInfo(os.getenv("TIMEZONE", "Europe/Samara").strip())
 

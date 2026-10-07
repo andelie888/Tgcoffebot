@@ -23,6 +23,7 @@ from ai_analysis import analyze_day
 from config import (
     ADMIN_IDS,
     ANTHROPIC_API_KEY,
+    BACKUP_CHAT_ID,
     BACKUP_DIR,
     BACKUP_KEEP_DAYS,
     BOT_TOKEN,
@@ -109,9 +110,16 @@ BTN_EDIT_PRICE = "💲 Цена"
 BTN_EDIT_COST = "🧮 Себестоимость"
 BTN_DELETE = "🗑 Удалить"
 BTN_CONFIRM_DELETE = "✅ Да, удалить"
+BTN_RECIPE = "🧾 Рецепт"
+BTN_RECIPE_ADD = "➕ Ингредиент в рецепт"
+BTN_RECIPE_CLEAR = "🗑 Очистить рецепт"
+BTN_BACK_PRODUCT = "⬅️ К товару"
+BTN_NEW_INGREDIENT = "➕ Новый ингредиент"
+UNIT_BUTTONS = ["кг", "л", "шт"]
 
 PURCHASE_PREFIX = "🛒 "
 STOCKTAKE_PREFIX = "📝 "
+RECIPE_PREFIX = "🥄 "
 EDIT_PRODUCT_PREFIX = "✏️ "
 FIXED_PREFIX = "🏠 "
 TAX_PREFIX = "🏛 "
@@ -285,7 +293,7 @@ def reports_menu():
 
 
 def stock_menu():
-    return keyboard([[BTN_STOCKTAKE], [BTN_BACK_REPORTS, BTN_MAIN]])
+    return keyboard([[BTN_STOCKTAKE, BTN_NEW_INGREDIENT], [BTN_BACK_REPORTS, BTN_MAIN]])
 
 
 def ingredients_menu(prefix, ingredients, extra=None, back=BTN_MAIN):
@@ -343,12 +351,21 @@ def menu_management_menu(products):
 
 
 def product_card_menu(has_recipe):
-    rows = [[BTN_EDIT_NAME, BTN_EDIT_PRICE]]
+    rows = [[BTN_EDIT_NAME, BTN_EDIT_PRICE], [BTN_RECIPE]]
 
     if not has_recipe:
-        rows.append([BTN_EDIT_COST])
+        rows[1].append(BTN_EDIT_COST)
 
     return keyboard(rows + [[BTN_DELETE], [BTN_BACK_PRODUCTS]])
+
+
+def recipe_menu(has_recipe):
+    rows = [[BTN_RECIPE_ADD]]
+
+    if has_recipe:
+        rows[0].append(BTN_RECIPE_CLEAR)
+
+    return keyboard(rows + [[BTN_BACK_PRODUCT]])
 
 
 def confirm_delete_menu():
@@ -1001,6 +1018,70 @@ async def handle_step(update: Update, context: ContextTypes.DEFAULT_TYPE, text):
         await show_fixed_costs(update)
         return
 
+    if step == "ing_name":
+        if not text or len(text) > NAME_MAX_LENGTH:
+            await send(update, "❌ Название от 1 до 40 символов.", cancel_menu())
+            return
+
+        if any(row[1].casefold() == text.casefold() for row in get_ingredients()):
+            await send(update, "❌ Такой ингредиент уже есть на складе.", cancel_menu())
+            return
+
+        data["ing_name"] = text
+        data["step"] = "ing_unit"
+        await send(
+            update,
+            f"📦 {text}\n\nВ чём считаем? Кофе и сахар — кг, молоко и сиропы — л, стаканы — шт.",
+            keyboard([UNIT_BUTTONS, [BTN_CANCEL]]),
+        )
+        return
+
+    if step == "ing_unit":
+        if text not in UNIT_BUTTONS:
+            await send(update, "Выберите кнопкой: кг, л или шт.", keyboard([UNIT_BUTTONS, [BTN_CANCEL]]))
+            return
+
+        data["ing_unit"] = text
+        data["step"] = "ing_price"
+        await send(update, f"Сколько стоит 1 {text} по закупке? Например: 1800", cancel_menu())
+        return
+
+    if step in ("ing_price", "ing_stock", "ing_min"):
+        value = parse_number(text)
+
+        if value is None or value < 0:
+            await send(update, "❌ Введите число, например: 5", cancel_menu())
+            return
+
+        unit = data["ing_unit"]
+
+        if step == "ing_price":
+            data["ing_price"] = value
+            data["step"] = "ing_stock"
+            await send(update, f"Сколько сейчас есть на складе ({unit})?", cancel_menu())
+            return
+
+        if step == "ing_stock":
+            data["ing_stock"] = value
+            data["step"] = "ing_min"
+            await send(
+                update,
+                f"При каком остатке напоминать о закупке ({unit})? Например: 2",
+                cancel_menu(),
+            )
+            return
+
+        acc.add_ingredient(data["ing_name"], unit, data["ing_price"], data["ing_stock"], value)
+        name = data["ing_name"]
+        data.clear()
+        await send(
+            update,
+            f"✅ Ингредиент «{name}» добавлен. Теперь его можно ставить в рецепты: "
+            f"{BTN_SETTINGS} → {BTN_MENU_MANAGEMENT} → товар → {BTN_RECIPE}.",
+        )
+        await show_stock(update)
+        return
+
     if step == "patent_cost":
         amount = parse_money(text)
 
@@ -1239,6 +1320,98 @@ async def show_menu_management(update: Update):
         message += "В меню пока нет товаров.\nДобавьте первый товар:"
 
     await send(update, message, menu_management_menu(products))
+
+
+async def show_recipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data = context.user_data
+    product = get_product(data.get("product_id"))
+
+    if product is None:
+        data.clear()
+        await show_menu_management(update)
+        return
+
+    data.pop("recipe_step", None)
+    recipe = acc.get_recipe(product[0])
+    message = f"🧾 Рецепт · {product[1]}\n\n"
+
+    if recipe:
+        total = 0
+        for _, name, unit, amount, price in recipe:
+            cost = amount * price
+            total += cost
+            message += f"• {name}: {qty(amount)} {unit} — {money(cost)}\n"
+        message += (
+            f"\nСебестоимость порции: {money(total)}\n"
+            "При закрытии дня эти ингредиенты списываются со склада."
+        )
+    else:
+        message += (
+            "Рецепта пока нет — склад не списывается.\n"
+            f"Нажмите «{BTN_RECIPE_ADD}» и добавьте всё, что уходит на одну порцию: "
+            "кофе, молоко, сироп, стакан, крышку."
+        )
+
+    await send(update, message, recipe_menu(bool(recipe)))
+
+
+async def start_recipe_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ingredients = get_ingredients()
+
+    if not ingredients:
+        await send(
+            update,
+            f"На складе нет ингредиентов. Сначала добавьте их: {BTN_REPORTS} → {BTN_STOCK} → {BTN_NEW_INGREDIENT}.",
+            recipe_menu(False),
+        )
+        return
+
+    context.user_data["recipe_step"] = "pick"
+    await send(
+        update,
+        "Выберите ингредиент. Если нужного нет — добавьте его в «📦 Склад» → «➕ Новый ингредиент».",
+        ingredients_menu(RECIPE_PREFIX, ingredients, back=BTN_BACK_PRODUCT),
+    )
+
+
+async def handle_recipe_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text):
+    data = context.user_data
+
+    if data["recipe_step"] == "pick":
+        ingredient = find_ingredient_by_label(text, RECIPE_PREFIX)
+
+        if ingredient is None:
+            await send(update, "Выберите ингредиент кнопкой.")
+            return
+
+        data["ingredient_id"] = ingredient[0]
+        data["recipe_step"] = "amount"
+        unit = ingredient[2]
+        examples = {"кг": "например: 18 г или 0.018", "л": "например: 200 мл или 0.2"}
+        await send(
+            update,
+            f"🥄 {ingredient[1]}\n\nСколько уходит на одну порцию ({unit})? "
+            f"{examples.get(unit, 'например: 1')}",
+            cancel_menu(),
+        )
+        return
+
+    ingredient = get_ingredient(data.get("ingredient_id"))
+
+    if ingredient is None:
+        await show_recipe(update, context)
+        return
+
+    amount = acc.parse_amount(text, ingredient[2])
+
+    if amount is None or amount <= 0:
+        await send(update, f"❌ Введите количество в {ingredient[2]}, например: 0.2", cancel_menu())
+        return
+
+    acc.set_recipe_item(data["product_id"], ingredient[0], amount)
+    data.pop("ingredient_id", None)
+    await send(update, f"✅ {ingredient[1]}: {qty(amount)} {ingredient[2]} на порцию.")
+    await show_recipe(update, context)
 
 
 async def show_product_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1566,12 +1739,31 @@ def backup_database():
 
     logger.info("Бэкап базы сохранён: %s", target)
 
+    return target
+
 
 async def backup_job(context: ContextTypes.DEFAULT_TYPE):
     try:
-        backup_database()
+        target = backup_database()
     except Exception:
         logger.exception("Не удалось сделать бэкап базы")
+        return
+
+    # Копия вне сервера: файл базы приходит в Telegram тому, кто обслуживает бота.
+    if not BACKUP_CHAT_ID:
+        return
+
+    try:
+        with open(target, "rb") as file:
+            await context.bot.send_document(
+                chat_id=BACKUP_CHAT_ID,
+                document=file,
+                filename=target.name,
+                caption=f"💾 Бэкап Coffee Manager · {today():%d.%m.%Y}",
+                disable_notification=True,
+            )
+    except Exception:
+        logger.exception("Не удалось отправить бэкап в Telegram")
 
 
 # ===== МАРШРУТИЗАЦИЯ СООБЩЕНИЙ =====
@@ -1609,7 +1801,10 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == BTN_CANCEL:
-        if "product_id" in data:
+        if "recipe_step" in data and "product_id" in data:
+            data.pop("ingredient_id", None)
+            await show_recipe(update, context)
+        elif "product_id" in data:
             data.pop("product_step", None)
             await show_product_card(update, context)
         elif "product_step" in data:
@@ -1737,6 +1932,36 @@ async def menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await send(update, f"🗑 «{product[1]}» удалён.")
 
         await show_menu_management(update)
+        return
+
+    if "product_id" in data and text == BTN_RECIPE:
+        await show_recipe(update, context)
+        return
+
+    if "product_id" in data and text == BTN_BACK_PRODUCT:
+        data.pop("recipe_step", None)
+        data.pop("ingredient_id", None)
+        await show_product_card(update, context)
+        return
+
+    if "product_id" in data and text == BTN_RECIPE_ADD:
+        await start_recipe_add(update, context)
+        return
+
+    if "product_id" in data and text == BTN_RECIPE_CLEAR:
+        acc.clear_recipe(data["product_id"])
+        await send(update, "🗑 Рецепт очищен.")
+        await show_recipe(update, context)
+        return
+
+    if "recipe_step" in data and "product_id" in data:
+        await handle_recipe_input(update, context, text)
+        return
+
+    if text == BTN_NEW_INGREDIENT:
+        data.clear()
+        data["step"] = "ing_name"
+        await send(update, "📦 Новый ингредиент\n\nНазвание, например: Сироп карамель", cancel_menu())
         return
 
     # ===== ВВОД ДАННЫХ =====

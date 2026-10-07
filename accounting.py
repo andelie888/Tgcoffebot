@@ -717,3 +717,75 @@ def rule_insights(context):
         lines.append(f"Пора закупить: {names}.")
 
     return lines[:4]
+
+
+# ===== РЕЦЕПТЫ И ИНГРЕДИЕНТЫ =====
+
+
+def get_recipe(product_id):
+    """[(ingredient_id, название, ед., количество на порцию, цена за ед.)]"""
+    return fetch_all(
+        """
+        SELECT i.id, i.name, i.unit, r.quantity, i.purchase_price
+        FROM recipes r
+        JOIN ingredients i ON i.id = r.ingredient_id
+        WHERE r.product_id = ?
+        ORDER BY r.id
+        """,
+        (product_id,),
+    )
+
+
+def set_recipe_item(product_id, ingredient_id, quantity):
+    """Добавляет ингредиент в рецепт или меняет его количество."""
+    with connect() as connection:
+        connection.execute(
+            "DELETE FROM recipes WHERE product_id = ? AND ingredient_id = ?",
+            (product_id, ingredient_id),
+        )
+        connection.execute(
+            "INSERT INTO recipes (product_id, ingredient_id, quantity) VALUES (?, ?, ?)",
+            (product_id, ingredient_id, quantity),
+        )
+        connection.commit()
+
+
+def clear_recipe(product_id):
+    with connect() as connection:
+        connection.execute("DELETE FROM recipes WHERE product_id = ?", (product_id,))
+        connection.commit()
+
+
+def add_ingredient(name, unit, price, stock, minimum):
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO ingredients (name, unit, stock, purchase_price, minimum_stock)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (name, unit, stock, price, minimum),
+        )
+        connection.commit()
+
+
+UNIT_SUFFIXES = {
+    "кг": {"г": 0.001, "гр": 0.001, "g": 0.001, "кг": 1, "kg": 1},
+    "л": {"мл": 0.001, "ml": 0.001, "л": 1, "l": 1},
+}
+
+
+def parse_amount(text, unit):
+    """«18 г» → 0.018 для кг, «200 мл» → 0.2 для л, «1» → 1. None — не число."""
+    match = re.match(r"^\s*(\d+(?:[.,]\d+)?)\s*([a-zа-я]*)\.?\s*$", text.casefold())
+
+    if not match:
+        return None
+
+    value = float(match.group(1).replace(",", "."))
+    suffix = match.group(2)
+
+    if not suffix:
+        return value
+
+    factor = UNIT_SUFFIXES.get(unit, {unit: 1}).get(suffix)
+    return None if factor is None else round(value * factor, 6)
