@@ -1,7 +1,7 @@
 {
   "shop_name": "Пример кофейни",
   "_comment_tax": "tax_mode: none | usn6 | usn15 | patent (тогда добавьте patent_cost_year)",
-  "tax_mode": "usn6",
+  "tax_mode": "none",
   "fixed_costs": {
     "Аренда": 45000,
     "Зарплата": 60000,

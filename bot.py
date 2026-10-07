@@ -645,7 +645,7 @@ def build_day_report(day):
         f"📈 Валовая прибыль: {money(f['gross'])} ({f['margin']:.0f}%)\n"
     )
     message += costs_lines(f)
-    message += f"\n💰 Чистая прибыль: {money(f['net'])}\n"
+    message += f"\n{profit_line(f)}\n"
 
     be = acc.breakeven(day)
 
@@ -670,6 +670,13 @@ def build_day_report(day):
         message += f"\n{stock_text}"
 
     return message.strip()
+
+
+def profit_line(f):
+    if f["tax_mode"] == "none":
+        return f"💰 Прибыль до налогов: {money(f['net'])}"
+
+    return f"💰 Чистая прибыль: {money(f['net'])}"
 
 
 def costs_lines(f):
@@ -798,7 +805,7 @@ def finance_report(start, end, label):
         f"📈 Валовая прибыль: {money(f['gross'])} ({f['margin']:.0f}%)\n"
     )
     message += costs_lines(f)
-    message += f"\n💰 Чистая прибыль: {money(f['net'])}"
+    message += f"\n{profit_line(f)}"
 
     unclosed = [
         start + timedelta(days=i)

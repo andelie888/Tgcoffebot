@@ -26,7 +26,11 @@ def build_prompt(context):
         f"Себестоимость проданного: {f['cost']:.0f}, маржа {f['margin']:.0f}%.",
         f"Угощения: {f['treat_qty']} шт. на {f['treat_cost']:.0f}; брак: {f['waste_qty']} шт. на {f['waste_cost']:.0f}.",
         f"Разовые расходы: {f['expenses']:.0f}; доля постоянных расходов на день: {f['fixed']:.0f}; налог (оценка): {f['tax']:.0f}.",
-        f"Чистая прибыль дня: {f['net']:.0f} {CURRENCY}.",
+        (
+            f"Прибыль дня до налогов (налоги владелец считает сам): {f['net']:.0f} {CURRENCY}."
+            if f["tax_mode"] == "none"
+            else f"Чистая прибыль дня: {f['net']:.0f} {CURRENCY}."
+        ),
     ]
 
     if context["avg_revenue"] is not None:

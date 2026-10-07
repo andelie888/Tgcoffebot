@@ -314,7 +314,7 @@ check("Неучтённые потери по инвентаризации" in l
 
 print("\n9. Отчёты")
 out = say("📅 Сегодня")
-check("Чистая прибыль" in last_text(out) and "Постоянные расходы" in last_text(out), "финансы за сегодня")
+check(("Чистая прибыль" in last_text(out) or "Прибыль до налогов" in last_text(out)) and "Постоянные расходы" in last_text(out), "финансы за сегодня")
 out = say("📅 Вчера")
 check("Финансы · Вчера" in last_text(out), "финансы за вчера")
 out = say("📅 Этот месяц")
