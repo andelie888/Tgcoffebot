@@ -393,7 +393,10 @@ def low_stock_text():
     text = "⚠️ Заканчивается:\n"
 
     for name, unit, stock, minimum_stock in low_stock:
-        text += f"• {name}: {qty(stock)} {unit} (минимум {qty(minimum_stock)})\n"
+        if stock < 0:
+            text += f"• {name}: {qty(round(stock, 3))} {unit} — по учёту меньше нуля, пересчитайте склад\n"
+        else:
+            text += f"• {name}: {qty(round(stock, 3))} {unit} (минимум {qty(minimum_stock)})\n"
 
     return text + "\n"
 

@@ -145,20 +145,13 @@ def change_stock_by_recipe(cursor, product_id, quantity_delta):
         (product_id,),
     ).fetchall()
 
+    # Остаток может уйти в минус: это честный сигнал «проверьте склад»,
+    # а повторное закрытие дня возвращает ровно то, что списало.
     for ingredient_id, recipe_quantity in rows:
-        amount = recipe_quantity * abs(quantity_delta)
-
-        if quantity_delta > 0:
-            # Остаток не уходит в минус: расхождение покажет инвентаризация.
-            cursor.execute(
-                "UPDATE ingredients SET stock = MAX(stock - ?, 0) WHERE id = ?",
-                (amount, ingredient_id),
-            )
-        else:
-            cursor.execute(
-                "UPDATE ingredients SET stock = stock + ? WHERE id = ?",
-                (amount, ingredient_id),
-            )
+        cursor.execute(
+            "UPDATE ingredients SET stock = stock - ? WHERE id = ?",
+            (recipe_quantity * quantity_delta, ingredient_id),
+        )
 
 
 # ===== РАЗБОР ВВОДА «ЛАТТЕ 0.4 — 23» =====

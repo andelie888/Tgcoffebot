@@ -218,6 +218,21 @@ check(f["sold"] == 1 and f["revenue"] == 270, "осталась одна про�
 check(f["treat_qty"] == 0, "старые угощения убраны")
 check(abs(stock("Кофе в зёрнах") - (coffee0 - 0.018)) < 1e-9, "склад восстановлен и списан заново")
 
+print("\n4б. Склад в минусе не «растёт» при повторном закрытии")
+with sqlite3.connect(config.DB_NAME) as c:
+    c.execute("UPDATE ingredients SET stock = 0.1 WHERE name = 'Молоко'")
+d = date(2026, 10, 6)
+acc.close_day(d, {pid["Латте 0.4"]: 5})
+after_first = stock("Молоко")
+acc.close_day(d, {pid["Латте 0.4"]: 5})
+check(abs(after_first - (0.1 - 1.5)) < 1e-9, "молоко ушло в минус ровно на расход")
+check(abs(stock("Молоко") - after_first) < 1e-9, "повторное закрытие не меняет склад")
+acc.close_day(d, {})
+check(abs(stock("Молоко") - 0.1) < 1e-9, "отмена продаж дня возвращает склад точно")
+with sqlite3.connect(config.DB_NAME) as c:
+    c.execute("DELETE FROM day_closures WHERE day = '2026-10-06'")
+    c.execute("UPDATE ingredients SET stock = ? WHERE name = 'Молоко'", (milk0 - 0.30 * 1,))
+
 # ----- себестоимость из рецепта -----
 
 print("\n5. Себестоимость считается из рецепта и цен закупки")
