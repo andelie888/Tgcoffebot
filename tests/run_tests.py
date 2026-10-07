@@ -126,7 +126,7 @@ check(data.get("fixed_costs") and data.get("tax_mode"), "пример содер
 data.pop("fixed_costs")
 data.pop("tax_mode")
 report = setup_shop.fill(data)
-check(len(report) == 6, f"позиций в меню 6 (получилось {len(report)})")
+check(len(report) == 8, f"позиций в меню 8 (получилось {len(report)})")
 
 products = acc.get_products()
 pid = {name: p for p, name, *_ in products}
